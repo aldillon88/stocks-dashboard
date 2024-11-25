@@ -1,4 +1,3 @@
-import urllib.error
 from google.cloud import bigquery
 import urllib.request
 import urllib.parse
@@ -10,64 +9,55 @@ from datetime import datetime, timedelta
 import time
 import logging
 
-# Load the environment variables from the .env file (development only).
-# Use environment variables set on the system in production.
-load_dotenv()
+def query_bq(client, table_id, symbols):
+	# Query BigQuery to list the symbol and corresponding last date in the table.
+	# This will be used to generate the from_date parameter for the API call.
+	query_string = f"""
+		WITH symbol_list AS (
+			SELECT symbol
+			FROM UNNEST(@symbols) AS symbol
+		)
+		SELECT symbol_list.symbol, MAX(stock_data.`date`) AS `date`
+		FROM symbol_list
+		LEFT JOIN `{table_id}` AS stock_data
+		ON symbol_list.symbol = stock_data.`symbol`
+		GROUP BY symbol_list.symbol
+	"""
 
-# Retrieve the environment variables for the function.
-apikey = os.getenv('FMP_API_KEY')
-project_id = os.getenv('GCP_PROJECT_ID')
+	job_config = bigquery.QueryJobConfig(
+			query_parameters=[
+				bigquery.ArrayQueryParameter('symbols', 'STRING', symbols)
+			]
+		)
+	query_job = client.query(query_string, job_config=job_config)
+	results = query_job.result()
 
-# Create the client to interface with BigQuery.
-client = bigquery.Client(project=project_id)
-db = 'stock_data'
-table = 'raw_stock_data'
-table_id = f"{project_id}.{db}.{table}"
+	return results
 
-# List the stock symbols for which data is to be retrieved.
-symbols = ['AAPL', 'TTD', 'GOOG', 'DDOG', 'PANW']
+def create_api_lookup(query_results):
+	# Generate a temporary list to hold the final parameters for the API calls:
+	# i.e. [['GOOG', '2024-01-01'], ['AAPL', '2024-03-31']]
+	api_lookup = []
+	default_date = '2024-11-19'
 
-# Query BigQuery to list the symbol and corresponding last date in the table.
-# This will be used to generate the from_date parameter for the API call.
-query_string = f"""
-	WITH symbol_list AS (
-		SELECT symbol
-		FROM UNNEST(@symbols) AS symbol
-	)
-	SELECT symbol_list.symbol, MAX(stock_data.`date`) AS `date`
-	FROM symbol_list
-	LEFT JOIN `{table_id}` AS stock_data
-	ON symbol_list.symbol = stock_data.`symbol`
-	GROUP BY symbol_list.symbol
-"""
+	for row in query_results:
+		if row['date']:
+			date_plus_1 = row['date'] + timedelta(days=1)
+			r = [
+				row['symbol'],
+				datetime.strftime(date_plus_1, format='%Y-%m-%d')
+			]
+		else:
+			r = [
+				row['symbol'],
+				default_date
+			]
 
-job_config = bigquery.QueryJobConfig(
-		query_parameters=[
-			bigquery.ArrayQueryParameter('symbols', 'STRING', symbols)
-		]
-	)
-query_job = client.query(query_string, job_config=job_config)
-results = query_job.result()
+		api_lookup.append(r)
+	
+	return api_lookup
 
-# Generate a temporary list to hold the final parameters for the API calls:
-# i.e. [['GOOG', '2024-01-01'], ['AAPL', '2024-03-31']]
-api_lookup = []
-default_date = '2024-11-19'
 
-for row in results:
-	if row['date']:
-		date_plus_1 = row['date'] + timedelta(days=1)
-		r = [
-			row['symbol'],
-			datetime.strftime(date_plus_1, format='%Y-%m-%d')
-		]
-	else:
-		r = [
-			row['symbol'],
-			default_date
-		]
-
-	api_lookup.append(r)
 
 # Functions to generate the API url, retrieve and process the data.
 def historical_url(apikey, ticker, from_date=None):
@@ -102,6 +92,7 @@ def historical_url(apikey, ticker, from_date=None):
 	full_url = f"{url}{ticker}?{encoded_params}"
 
 	return full_url
+
 
 def retrieve_data(apikey, symbol, from_date, max_retries=3, delay=2):
 	"""
@@ -164,7 +155,8 @@ def retrieve_data(apikey, symbol, from_date, max_retries=3, delay=2):
 				logging.error(f"Max retries reached for unexpected error: {e}")
 				raise
 
-def process_data(apikey, api_lookup):
+
+def process_data(apikey, api_lookup, client, table_id):
 	"""
 	Processes stock data for a list of symbols and inserts it into a BigQuery table.
 
@@ -226,4 +218,25 @@ def process_data(apikey, api_lookup):
 			print('stock_data is empty')
 
 
-process_data(apikey, api_lookup)
+def main():
+	# Load the environment variables from the .env file (development only).
+	# Use environment variables set on the system in production.
+	load_dotenv()
+
+	# Retrieve the environment variables for the function.
+	apikey = os.getenv('FMP_API_KEY')
+	project_id = os.getenv('GCP_PROJECT_ID')
+
+	# Create the client to interface with BigQuery.
+	client = bigquery.Client(project=project_id)
+	db = 'stock_data'
+	table = 'raw_stock_data'
+	table_id = f"{project_id}.{db}.{table}"
+
+	# List the stock symbols for which data is to be retrieved.
+	symbols = ['AAPL', 'TTD', 'GOOG', 'DDOG', 'PANW']
+
+	results = query_bq(client, table_id, symbols)
+	api_lookup = create_api_lookup(results)
+	process_data(apikey, api_lookup, client, table_id)
+	return "Process complete"
