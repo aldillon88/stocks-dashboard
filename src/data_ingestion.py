@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 import time
 import logging
 
+#logger = logging.getLogger(__name__)
+
 def query_bq(client, table_id, symbols):
 	# Query BigQuery to list the symbol and corresponding last date in the table.
 	# This will be used to generate the from_date parameter for the API call.
@@ -39,14 +41,25 @@ def create_api_lookup(query_results):
 	# i.e. [['GOOG', '2024-01-01'], ['AAPL', '2024-03-31']]
 	api_lookup = []
 	default_date = '2024-11-19'
+	today = datetime.now().strftime(format='%Y-%m-%d')
 
 	for row in query_results:
+
 		if row['date']:
-			date_plus_1 = row['date'] + timedelta(days=1)
-			r = [
-				row['symbol'],
-				datetime.strftime(date_plus_1, format='%Y-%m-%d')
-			]
+
+			if str(row['date']) == today:
+				r = [
+					row['symbol'],
+					today
+				]
+			
+			else:
+				date_plus_1 = row['date'] + timedelta(days=1)
+				r = [
+					row['symbol'],
+					datetime.strftime(date_plus_1, format='%Y-%m-%d')
+				]
+
 		else:
 			r = [
 				row['symbol'],
@@ -200,6 +213,7 @@ def process_data(apikey, api_lookup, client, table_id):
 	for item in api_lookup:
 		symbol = item[0]
 		from_date = item[1]
+		logging.info(f"(process_data) The from_date for {symbol} is: {from_date}")
 		stock_data = retrieve_data(apikey, symbol, from_date)
 		
 		if stock_data:
@@ -223,6 +237,8 @@ def main():
 	# Use environment variables set on the system in production.
 	load_dotenv()
 
+	logging.basicConfig(level=logging.DEBUG)
+
 	# Retrieve the environment variables for the function.
 	apikey = os.getenv('FMP_API_KEY')
 	project_id = os.getenv('GCP_PROJECT_ID')
@@ -240,3 +256,6 @@ def main():
 	api_lookup = create_api_lookup(results)
 	process_data(apikey, api_lookup, client, table_id)
 	return "Process complete"
+
+if __name__ == '__main__':
+	main()
