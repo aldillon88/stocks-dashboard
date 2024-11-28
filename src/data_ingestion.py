@@ -169,67 +169,128 @@ def retrieve_data(apikey, symbol, from_date, max_retries=3, delay=2):
 				raise
 
 
-def process_data(apikey, api_lookup, client, table_id):
+def merge_table(client, target_table_ref, temp_table_ref):
+	merge_query = f"""
+	MERGE INTO `{target_table_ref}` AS target
+	USING `{temp_table_ref}` AS source
+	ON target.symbol = source.symbol AND target.date = source.date
+	WHEN MATCHED THEN
+	UPDATE SET
+		symbol = source.symbol,
+		date = source.date,
+		open = source.open,
+		high = source.high,
+		low = source.low,
+		close = source.close,
+		adjClose = source.adjClose,
+		volume = source.volume,
+		unadjustedVolume = source.unadjustedVolume,
+		change = source.change,
+		changePercent = source.changePercent,
+		vwap = source.vwap,
+		label = source.label,
+		changeOverTime = source.changeOverTime,
+		timestamp = source.timestamp
+	WHEN NOT MATCHED THEN
+	INSERT (
+		symbol, 
+		date, 
+		open, 
+		high, 
+		low, 
+		close, 
+		adjClose, 
+		volume, 
+		unadjustedVolume, 
+		change, 
+		changePercent, 
+		vwap, 
+		label, 
+		changeOverTime, 
+		timestamp
+	)
+	VALUES (
+		source.symbol, 
+		source.date, 
+		source.open, 
+		source.high, 
+		source.low, 
+		source.close, 
+		source.adjClose, 
+		source.volume, 
+		source.unadjustedVolume, 
+		source.change, 
+		source.changePercent, 
+		source.vwap, 
+		source.label, 
+		source.changeOverTime, 
+		source.timestamp
+	)
 	"""
-	Processes stock data for a list of symbols and inserts it into a BigQuery table.
 
-	Args:
-		apikey (str): Your API key for authenticating with the Financial Modeling Prep API.
-		api_lookup (list): A list of tuples, where each tuple contains:
-			- The stock ticker symbol (str) to retrieve data for (e.g., 'AAPL').
-			- The start date (str) in 'YYYY-MM-DD' format to retrieve historical data from.
+	# Execute the query
+	query_job = client.query(merge_query)
+	query_job.result() 
 
-	Side Effects:
-		- Retrieves historical stock price data using the `retrieve_data` function.
-		- Adds a timestamp to each record and appends the symbol to the retrieved data.
-		- Inserts the processed data into a BigQuery table specified by the global `table_id` variable.
-		- Prints log messages for debugging, including retrieved rows and any insertion errors.
 
-	Returns:
-		None
+def process_data(apikey, api_lookup, client, project_id, target_table_ref):
+	dataset_id = 'stock_data'
 
-	Example:
-		>>> api_lookup = [('AAPL', '2023-01-01'), ('GOOG', '2022-01-01')]
-		>>> process_data('your_api_key', api_lookup)
-		rows_to_insert:
-		 [{'symbol': 'AAPL', 'date': '2023-01-02', 'timestamp': '2024-11-23T15:00:00Z', ...}]
-		Data inserted successfully.
-
-	Notes:
-		- This function relies on the `retrieve_data` function to fetch data from the Financial Modeling Prep API.
-		- Each data record is enriched with:
-			- The `symbol` field for the stock ticker.
-			- The current timestamp in ISO format (`datetime.now().isoformat()`).
-		- Ensure the `table_id` variable is defined globally with the correct BigQuery table identifier.
-		- Error handling is minimal; consider adding robust exception handling for API failures, empty results, and BigQuery errors.
-		- Print statements are used for debugging; they may be removed or replaced with a proper logging framework in production.
-
-	Dependencies:
-		- Requires the `retrieve_data` function for fetching stock data.
-		- Requires a configured BigQuery `client` object and `table_id` variable for database interactions.
-		- Uses Python's `datetime` module for timestamp generation.
-
-	"""
 	for item in api_lookup:
 		symbol = item[0]
 		from_date = item[1]
-		logging.info(f"(process_data) The from_date for {symbol} is: {from_date}")
+		logging.info(f"(process_data) Processing data for {symbol} from {from_date}")
+
 		stock_data = retrieve_data(apikey, symbol, from_date)
-		
 		if stock_data:
+			# Add symbol and timestamp to each row
 			for data in stock_data['historical']:
 				data['symbol'] = stock_data['symbol']
 				data['timestamp'] = datetime.now().isoformat()
-			rows_to_insert = stock_data['historical']
-			errors = client.insert_rows_json(table_id, rows_to_insert)
-			
-			if errors == []:
-				print("Data inserted successfully.")
-			else:
-				print("Encountered errors while inserting rows:", errors)
+
+			# Create a unique temporary table
+			temp_table_id = f"temp_table_{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+			temp_table_ref = f"{project_id}.{dataset_id}.{temp_table_id}"
+
+			job_config = bigquery.LoadJobConfig(
+				schema=[
+					bigquery.SchemaField('symbol', 'STRING'),
+					bigquery.SchemaField('date', 'DATE'),
+					bigquery.SchemaField('open', 'FLOAT'),
+					bigquery.SchemaField('high', 'FLOAT'),
+					bigquery.SchemaField('low', 'FLOAT'),
+					bigquery.SchemaField('close', 'FLOAT'),
+					bigquery.SchemaField('adjClose', 'FLOAT'),
+					bigquery.SchemaField('volume', 'INTEGER'),
+					bigquery.SchemaField('unadjustedVolume', 'INTEGER'),
+					bigquery.SchemaField('change', 'FLOAT'),
+					bigquery.SchemaField('changePercent', 'FLOAT'),
+					bigquery.SchemaField('vwap', 'FLOAT'),
+					bigquery.SchemaField('label', 'STRING'),
+					bigquery.SchemaField('changeOverTime', 'FLOAT'),
+					bigquery.SchemaField('timestamp', 'TIMESTAMP'),
+				],
+				write_disposition='WRITE_TRUNCATE'
+			)
+
+			try:
+				# Insert data into BigQuery
+				logging.info(f"Loading data for {symbol} into temporary table: {temp_table_ref}")
+				client.load_table_from_json(stock_data['historical'], temp_table_ref, job_config=job_config).result()
+				merge_table(client, target_table_ref, temp_table_ref)
+				logging.info(f"Data successfully loaded for {symbol}.")
+
+			except Exception as e:
+				logging.error(f"Error inserting data for {symbol}: {e}")
+
+			finally:
+				# Cleanup the temporary table
+				logging.info(f"Deleting temporary table: {temp_table_ref}")
+				client.delete_table(temp_table_ref, not_found_ok=True)
 
 		else:
-			print('stock_data is empty')
+			logging.warning(f"No data retrieved for {symbol} from {from_date}.")
+
 
 
 def main():
@@ -245,16 +306,17 @@ def main():
 
 	# Create the client to interface with BigQuery.
 	client = bigquery.Client(project=project_id)
-	db = 'stock_data'
-	table = 'raw_stock_data'
-	table_id = f"{project_id}.{db}.{table}"
+	dataset_id = 'stock_data'
+	target_table_id = 'raw_stock_data'
+	target_table_ref = f"{project_id}.{dataset_id}.{target_table_id}"
 
 	# List the stock symbols for which data is to be retrieved.
 	symbols = ['AAPL', 'TTD', 'GOOG', 'DDOG', 'PANW']
 
-	results = query_bq(client, table_id, symbols)
+	results = query_bq(client, target_table_ref, symbols)
 	api_lookup = create_api_lookup(results)
-	process_data(apikey, api_lookup, client, table_id)
+	process_data(apikey, api_lookup, client, project_id, target_table_ref)
+	
 	return "Process complete"
 
 if __name__ == '__main__':

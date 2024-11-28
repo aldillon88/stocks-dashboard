@@ -2,3 +2,4 @@ configs
 stocks-dashboard-venv
 .DS_Store
 .env
+src/myapp.log
