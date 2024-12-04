@@ -17,7 +17,7 @@ from functions import *
 
 #df = load_data("../data/clean/complete.csv") # for local development
 df = load_data()
-st.table(df.head(10))
+st.table(df.head(5))
 
 groups = df.groupby('symbol')
 
@@ -48,4 +48,4 @@ for row in range(num_rows):
 				st.plotly_chart(plot_candles(group, symbol))
 
 
-calculate_rsi(df)
+st.plotly_chart(test())
