@@ -16,13 +16,28 @@ if project_root not in sys.path:
 from functions import *
 
 #df = load_data("../data/clean/complete.csv") # for local development
-df = load_data()
-st.table(df.head(5))
+#with st.sidebar:
+selected_unit = st.pills(
+	label=None,
+	options=['30 Days', '90 Days', '1 Year', 'Year To Date'],
+	selection_mode='single',
+	default='Year To Date'
+	)
+if selected_unit == '30 Days':
+	unit = 30
+elif selected_unit == '90 Days':
+	unit = 90
+elif selected_unit == '1 Year':
+	unit = 365
+else:
+	unit = None
+
+df = load_data(unit)
+sp_growth = df.loc[df['symbol'] == '^GSPC'][['date', 'changePercent']].copy()
 
 groups = df.groupby('symbol')
 
 symbols_list = df['symbol'].unique()
-st.text(symbols_list)
 
 num_rows = math.ceil(len(symbols_list) / 2)
 
@@ -37,7 +52,7 @@ for row in range(num_rows):
 			if row * 2 < len(symbols_list):
 				symbol = symbols_list[row * 2]
 				group = groups.get_group(symbol)
-				st.plotly_chart(plot_candles(group, symbol))
+				st.plotly_chart(plot_candles(group, symbol, sp_growth))
 	
 	# Second item in row (if exists)
 	with col2:
@@ -45,7 +60,6 @@ for row in range(num_rows):
 			if row * 2 + 1 < len(symbols_list):
 				symbol = symbols_list[row * 2 + 1]
 				group = groups.get_group(symbol)
-				st.plotly_chart(plot_candles(group, symbol))
+				st.plotly_chart(plot_candles(group, symbol, sp_growth))
 
 
-st.plotly_chart(test())

@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+
 import sys
 import os
 
@@ -12,17 +12,18 @@ if project_root not in sys.path:
 
 from functions import *
 
-#with st.container():
-st.header("Overview")
-st.markdown("""
-	Insert text!
-	""")
+df = load_data()
 
-st.divider()
-st.header("Sample Header")
-st.markdown("""
-	Insert text!
-	""")
+col1, col2 = st.columns([.2, .8])
+
+with col1:
+	symbols = df['symbol'].unique().tolist()
+	selected_symbols = st.multiselect(label='Symbols', options=symbols, default='^GSPC')
+	df_filtered = df.loc[df['symbol'].isin(selected_symbols)].copy()
+
+with col2:
+	st.plotly_chart(plot_vs_sp(df_filtered))
+
 
 
 

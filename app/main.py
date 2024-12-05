@@ -7,7 +7,7 @@ def main():
     st.title('Stock Portfolio Dashboard')
 
     analysis_page = st.Page("page_1.py", title="Analysis")
-    project_page = st.Page("page_2.py", title="Project Description")
+    project_page = st.Page("page_2.py", title="vs. S&P 500")
 
     pg = st.navigation([analysis_page, project_page])
 
