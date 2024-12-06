@@ -272,28 +272,27 @@ def plot_vs_sp(df, symbols=None):
 		)
 
 		fig.update_layout(
-		title=dict(
-			text='% Growth',
-			x=0,
-			y=1,
-			xanchor='left',
-			yanchor='top'
-		),
-		margin=dict(
-			l=0,
-			r=0,
-			t=50,
-			b=0
-		),
-		xaxis_rangeslider_visible=False,
-		showlegend=True,
-		yaxis_tickformat='%',
-		yaxis=dict(
-			title='% Growth',
-			titlefont=dict(size=12),
-			tickformat='.0%'
-		),
-		hovermode='x unified'
+			title=dict(
+				text='% Growth',
+				x=0,
+				y=1,
+				xanchor='left',
+				yanchor='top'
+			),
+			margin=dict(
+				l=0,
+				r=0,
+				t=50,
+				b=0
+			),
+			xaxis_rangeslider_visible=False,
+			showlegend=True,
+			yaxis=dict(
+				title='% Growth',
+				titlefont=dict(size=12),
+				tickformat='.0%'
+			),
+			hovermode='x unified'
 	)
 
 	return fig
