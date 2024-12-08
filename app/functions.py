@@ -254,6 +254,24 @@ def get_sp500_historical_prices(start_date, end_date):
 	
 	return sp500_data
 
+@st.cache_data
+def get_ticker_summary(symbols):
+
+	cols_to_keep = [
+		'symbol', 'shortName', 'beta', 'trailingPE', 'forwardPE', 'fiftyTwoWeekLow', 'fiftyTwoWeekHigh', 'priceToSalesTrailing12Months', 'profitMargins',
+		'trailingEps', 'forwardEps', 'currentPrice', 'targetHighPrice', 'targetLowPrice', 'targetMeanPrice', 'targetMedianPrice',
+		'recommendationKey', 'earningsGrowth', 'revenueGrowth'
+	]
+
+	summary_list = []
+
+	for symbol in symbols:
+		ticker = yf.Ticker(symbol)
+		summary_list.append(ticker.info)
+	df = pd.DataFrame(summary_list)[cols_to_keep]
+	df['impliedReturn'] = round((df['targetMeanPrice'] - df['currentPrice']) / df['currentPrice'], 2)
+	
+	return df
 
 def plot_vs_sp(df, symbols=None):
 
@@ -345,3 +363,42 @@ def calculate_macd(df):
 	df['macdHist'] = df['macd'] - df['signal']
 	return df
 
+def plot_target_price(keys, values):
+	fig = go.Figure()
+	fig.add_trace(
+		go.Scatter(
+			x = values,
+			y = np.zeros(len(values)),
+			mode='markers+text',
+			marker=dict(
+				size=15
+			)
+		)
+	)
+
+	for key, val in zip(keys, values):
+		fig.add_annotation(
+			x=val,
+			y=0,
+			text=key,
+			textangle=45,
+			xanchor='right',
+			showarrow=False,
+			yshift=25
+		)
+	
+	fig.update_yaxes(
+		zeroline=True,
+		zerolinewidth=(2),
+		zerolinecolor='LightPink',
+		showgrid=False,
+		tickmode='array',
+		tickvals=[0]
+	)
+
+	fig.update_layout(
+		autosize=True,
+		height=200
+	)
+
+	return fig
