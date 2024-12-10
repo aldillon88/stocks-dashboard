@@ -42,9 +42,114 @@ def load_data(unit=None):
 	df['date'] = pd.to_datetime(df['date'])
 	print(df.dtypes)
 
+	vix_df = get_historical_vix(start_date, end_date)
+
 	if unit:
 		df = df.loc[df['date'] > df['date'].max() - datetime.timedelta(unit)]
+		vix_df = vix_df.loc[vix_df['date'] > vix_df['date'].max() - datetime.timedelta(unit)]
 
+	return df, vix_df
+
+def get_sp500_historical_prices(start_date, end_date):
+	"""
+	Fetch historical S&P 500 prices using yfinance.
+	
+	Args:
+		start_date (str): Start date in the format 'YYYY-MM-DD'.
+		end_date (str): End date in the format 'YYYY-MM-DD'.
+	
+	Returns:
+		pd.DataFrame: Historical price data for the S&P 500.
+	"""
+	# Define the S&P 500 ticker
+	sp500_ticker = "^GSPC"
+	
+	# Fetch the data
+	sp500_data = yf.download(sp500_ticker, start=start_date, end=end_date)
+	sp500_data['symbol'] = sp500_ticker
+
+	if isinstance(sp500_data.columns, pd.MultiIndex):
+		sp500_data.columns = sp500_data.columns.get_level_values(0)
+	
+	sp500_data = sp500_data.reset_index()
+	sp500_data.columns = sp500_data.columns.str.lower()
+	sp500_data = sp500_data.rename(columns={'adj close': 'adjClose'})
+	sp500_data['change'] = sp500_data['close'].diff().bfill()
+	sp500_data['date'] = sp500_data['date'].dt.strftime('%Y-%m-%d')
+	
+	return sp500_data
+
+def get_historical_vix(start_date, end_date):
+	ticker = yf.Ticker('^VIX')
+	vix_df = pd.DataFrame(ticker.history(start=start_date, end=end_date)).reset_index()
+	vix_df = vix_df.drop(columns=['Volume', 'Dividends', 'Stock Splits'])
+	vix_df.columns = vix_df.columns.str.lower()
+	return vix_df
+
+@st.cache_data
+def get_ticker_summary(symbols):
+
+	cols_to_keep = [
+		'symbol', 'shortName', 'beta', 'trailingPE', 'forwardPE', 'fiftyTwoWeekLow', 'fiftyTwoWeekHigh', 'priceToSalesTrailing12Months', 'profitMargins',
+		'trailingEps', 'forwardEps', 'currentPrice', 'targetHighPrice', 'targetLowPrice', 'targetMeanPrice', 'targetMedianPrice',
+		'recommendationKey', 'earningsGrowth', 'revenueGrowth'
+	]
+
+	summary_list = []
+
+	for symbol in symbols:
+		ticker = yf.Ticker(symbol)
+		summary_list.append(ticker.info)
+	df = pd.DataFrame(summary_list)[cols_to_keep]
+	df['impliedReturn'] = round((df['targetMeanPrice'] - df['currentPrice']) / df['currentPrice'], 2)
+	
+	return df
+
+def add_metrics(df):
+
+	metrics_list = []
+
+	# Iterate through each symbol and calculate metrics.
+	for _, group in df.groupby('symbol'):
+
+		group = group.sort_values(by='date').copy()
+
+		# Add gain, loss and changePercent.
+		g1 = calculate_gain_loss(group)
+
+		# Add RSI
+		g2 = calculate_rsi(g1)
+
+		# Add MACD
+		g3 = calculate_macd(g2)
+
+		# Append the enriched dataframe to the metrics_list.
+		metrics_list.append(g3)
+
+	return pd.concat(metrics_list)
+
+def calculate_gain_loss(df):
+	df['gain'] = np.where(df['change'] > 0, df['change'], 0)
+	df['loss'] = np.abs(np.where(df['change'] < 0, df['change'], 0))
+	df['changePercent'] = df['close'].pct_change().fillna(0)
+	return df
+
+def calculate_rsi(df):
+
+	average_gain = df['gain'].ewm(span=14, adjust=False).mean()
+	average_loss = df['loss'].ewm(span=14, adjust=False).mean()
+	rs = average_gain / (average_loss + 1e-10)
+	rsi = 100 - (100 / (1 + rs))
+	df['rsi'] = rsi
+	return df
+
+def calculate_macd(df):
+
+	fast = df['close'].ewm(span=12, adjust=False).mean()
+	slow = df['close'].ewm(span=26, adjust=False).mean()
+	df['macd'] = fast - slow
+	df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+	df['macdHist'] = df['macd'] - df['signal']
 	return df
 
 def plot_candles(df, symbol, sp_growth):
@@ -75,7 +180,7 @@ def plot_candles(df, symbol, sp_growth):
 	)
 
 	fig.add_trace(
-		go.Line(
+		go.Scatter(
 			x=df['date'],
 			y=df['rsi'],
 			name='RSI'
@@ -85,17 +190,17 @@ def plot_candles(df, symbol, sp_growth):
 	)
 
 	fig.add_trace(
-		go.Line(
+		go.Scatter(
 			x=df['date'],
 			y=df['macd'],
-			name='MACD'
+			name='MACD',
 		),
 		row=3,
 		col=1
 	)
 
 	fig.add_trace(
-		go.Line(
+		go.Scatter(
 			x=df['date'],
 			y=df['signal'],
 			name='Signal'
@@ -115,7 +220,7 @@ def plot_candles(df, symbol, sp_growth):
 	)
 
 	fig.add_trace(
-		go.Line(
+		go.Scatter(
 			x=df['date'],
 			y=df['changePercent'].cumsum(),
 			name=symbol
@@ -125,7 +230,7 @@ def plot_candles(df, symbol, sp_growth):
 	)
 
 	fig.add_trace(
-		go.Line(
+		go.Scatter(
 			x=sp_growth['date'],
 			y=sp_growth['changePercent'].cumsum(),
 			name='S&P 500'
@@ -224,55 +329,6 @@ def plot_candles(df, symbol, sp_growth):
 
 	return fig
 
-
-def get_sp500_historical_prices(start_date, end_date):
-	"""
-	Fetch historical S&P 500 prices using yfinance.
-	
-	Args:
-		start_date (str): Start date in the format 'YYYY-MM-DD'.
-		end_date (str): End date in the format 'YYYY-MM-DD'.
-	
-	Returns:
-		pd.DataFrame: Historical price data for the S&P 500.
-	"""
-	# Define the S&P 500 ticker
-	sp500_ticker = "^GSPC"
-	
-	# Fetch the data
-	sp500_data = yf.download(sp500_ticker, start=start_date, end=end_date)
-	sp500_data['symbol'] = sp500_ticker
-
-	if isinstance(sp500_data.columns, pd.MultiIndex):
-		sp500_data.columns = sp500_data.columns.get_level_values(0)
-	
-	sp500_data = sp500_data.reset_index()
-	sp500_data.columns = sp500_data.columns.str.lower()
-	sp500_data = sp500_data.rename(columns={'adj close': 'adjClose'})
-	sp500_data['change'] = sp500_data['close'].diff().bfill()
-	sp500_data['date'] = sp500_data['date'].dt.strftime('%Y-%m-%d')
-	
-	return sp500_data
-
-@st.cache_data
-def get_ticker_summary(symbols):
-
-	cols_to_keep = [
-		'symbol', 'shortName', 'beta', 'trailingPE', 'forwardPE', 'fiftyTwoWeekLow', 'fiftyTwoWeekHigh', 'priceToSalesTrailing12Months', 'profitMargins',
-		'trailingEps', 'forwardEps', 'currentPrice', 'targetHighPrice', 'targetLowPrice', 'targetMeanPrice', 'targetMedianPrice',
-		'recommendationKey', 'earningsGrowth', 'revenueGrowth'
-	]
-
-	summary_list = []
-
-	for symbol in symbols:
-		ticker = yf.Ticker(symbol)
-		summary_list.append(ticker.info)
-	df = pd.DataFrame(summary_list)[cols_to_keep]
-	df['impliedReturn'] = round((df['targetMeanPrice'] - df['currentPrice']) / df['currentPrice'], 2)
-	
-	return df
-
 def plot_vs_sp(df, symbols=None):
 
 	#df = df.loc[df['symbol'] == '^GSPC']
@@ -282,7 +338,7 @@ def plot_vs_sp(df, symbols=None):
 	for symbol, group in df.groupby('symbol'):
 
 		fig.add_trace(
-			go.Line(
+			go.Scatter(
 				x=group['date'],
 				y=group['changePercent'].cumsum(),
 				name=symbol
@@ -314,54 +370,6 @@ def plot_vs_sp(df, symbols=None):
 	)
 
 	return fig
-
-
-def add_metrics(df):
-
-	metrics_list = []
-
-	# Iterate through each symbol and calculate metrics.
-	for _, group in df.groupby('symbol'):
-
-		group = group.sort_values(by='date').copy()
-
-		# Add gain, loss and changePercent.
-		g1 = calculate_gain_loss(group)
-
-		# Add RSI
-		g2 = calculate_rsi(g1)
-
-		# Add MACD
-		g3 = calculate_macd(g2)
-
-		# Append the enriched dataframe to the metrics_list.
-		metrics_list.append(g3)
-
-	return pd.concat(metrics_list)
-
-def calculate_gain_loss(df):
-	df['gain'] = np.where(df['change'] > 0, df['change'], 0)
-	df['loss'] = np.abs(np.where(df['change'] < 0, df['change'], 0))
-	df['changePercent'] = df['close'].pct_change().fillna(0)
-	return df
-
-def calculate_rsi(df):
-
-	average_gain = df['gain'].ewm(span=14, adjust=False).mean()
-	average_loss = df['loss'].ewm(span=14, adjust=False).mean()
-	rs = average_gain / (average_loss + 1e-10)
-	rsi = 100 - (100 / (1 + rs))
-	df['rsi'] = rsi
-	return df
-
-def calculate_macd(df):
-
-	fast = df['close'].ewm(span=12, adjust=False).mean()
-	slow = df['close'].ewm(span=26, adjust=False).mean()
-	df['macd'] = fast - slow
-	df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
-	df['macdHist'] = df['macd'] - df['signal']
-	return df
 
 def plot_target_price(keys, values):
 	fig = go.Figure()
@@ -401,4 +409,14 @@ def plot_target_price(keys, values):
 		height=200
 	)
 
+	return fig
+
+def plot_vix(vix_df):
+	fig = go.Figure()
+	fig.add_trace(go.Scatter(
+		x=vix_df['date'],
+		y=vix_df['close'],
+		fill='tozeroy',
+		mode='lines'
+	))
 	return fig

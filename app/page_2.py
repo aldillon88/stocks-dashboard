@@ -13,7 +13,7 @@ if project_root not in sys.path:
 from functions import *
 
 # Load historical price data from into a dataframe.
-price_df = load_data()
+price_df, vix_df = load_data()
 
 # Create a drop-down select box to choose a stock symbol.
 symbols = price_df['symbol'].unique().tolist()
@@ -54,7 +54,7 @@ with r1c4:
 		value_num = summary_df_filtered['impliedReturn'].values[0]
 		value_formatted = format(value_num, '.2%')
 		#value = format(summary_df_filtered['impliedReturn'].values[0], '.2%')
-		if value_num > 0:
+		if abs(value_num) > 0:
 			st.metric(label='Implied Return', value=value_formatted)
 
 with r1c5:
@@ -67,33 +67,49 @@ target_price_vals = summary_df_filtered[target_price_cols].values[0]
 target_price_labels = ['Current', 'High', 'Low', 'Mean', 'Median']
 st.plotly_chart(plot_target_price(target_price_labels, target_price_vals))
 
+st.plotly_chart(plot_vix(vix_df))
+
 st.table(summary_df_filtered)
 
 import yfinance as yf
 ticker = yf.Ticker('AAPL')
 
 
+reco_df = pd.DataFrame(ticker.recommendations)
+reco_df_pivot = reco_df.set_index('period').T.iloc[:, 0]
 
-st.write(ticker.info['city'])
-profile = ticker.info
+def plot_recommendations(df):
 
-balance_sheet = ticker.balance_sheet
-st.table(ticker.balance_sheet)
-st.json(ticker.analyst_price_targets)
+	fig = go.Figure()
+
+	fig.add_trace(go.Bar(
+		x=df.values,
+		y=df.index,
+		orientation='h'
+	))
+
+	fig.update_layout(
+		yaxis=dict(
+			autorange='reversed'
+		)
+	)
+
+	return fig
+
+st.plotly_chart(plot_recommendations(reco_df_pivot))
 
 st.write(ticker.earnings_estimate)
 st.write(ticker.earnings_history)
 st.write(ticker.eps_trend)
 st.write(ticker.recommendations)
 
+st.table(df_filtered[:3])
 
+grouped = df_filtered.groupby('symbol')
+a = grouped.get_group('AAPL')[['date', 'symbol', 'changePercent']].set_index('date')
+b = grouped.get_group('^GSPC')[['date', 'changePercent']].set_index('date')
+joined = a.merge(b, left_on='date', right_on='date', suffixes=('_symbol', '_sp'))
+st.write(joined)
 
-
-
-
-
-
-
-
-
-
+joined['beta'] = joined['changePercent_symbol'].rolling(window=7).cov(joined['changePercent_sp']) / joined['changePercent_sp'].rolling(window=7).var()
+st.write(joined)

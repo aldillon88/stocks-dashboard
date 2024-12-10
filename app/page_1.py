@@ -32,7 +32,7 @@ elif selected_unit == '1 Year':
 else:
 	unit = None
 
-df = load_data(unit)
+df, vix_df = load_data(unit)
 sp_growth = df.loc[df['symbol'] == '^GSPC'][['date', 'changePercent']].copy()
 
 groups = df.groupby('symbol')
