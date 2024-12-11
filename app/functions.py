@@ -38,9 +38,8 @@ def load_data(unit=None):
 	df = pd.concat([df, sp])
 
 	df = add_metrics(df)
-	print(df.dtypes)
+	df = calculate_beta(df)
 	df['date'] = pd.to_datetime(df['date'])
-	print(df.dtypes)
 
 	vix_df = get_historical_vix(start_date, end_date)
 
@@ -108,11 +107,12 @@ def get_ticker_summary(symbols):
 def add_metrics(df):
 
 	metrics_list = []
+	groups = df.groupby('symbol')
 
 	# Iterate through each symbol and calculate metrics.
-	for _, group in df.groupby('symbol'):
+	for _, group in groups:
 
-		group = group.sort_values(by='date').copy()
+		group = group.sort_values(by='date')#.copy()
 
 		# Add gain, loss and changePercent.
 		g1 = calculate_gain_loss(group)
@@ -151,6 +151,22 @@ def calculate_macd(df):
 	df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
 	df['macdHist'] = df['macd'] - df['signal']
 	return df
+
+def calculate_beta(df):
+	df['date'] = pd.to_datetime(df['date'])
+	groups = df.groupby('symbol')
+	sp_data = groups.get_group('^GSPC')[['date', 'changePercent']].set_index('date')
+
+	results = []
+	for _, group in groups:
+
+		symbol_data = group[['date', 'changePercent']].set_index('date')
+		joined = symbol_data.join(sp_data, rsuffix='_sp')
+		sevenDayBeta = (joined['changePercent'].rolling(window=7).cov(joined['changePercent_sp']) / joined['changePercent_sp'].rolling(window=7).var()).bfill()
+		group['sevenDayBeta'] = sevenDayBeta.values
+		results.append(group)
+	
+	return pd.concat(results)
 
 def plot_candles(df, symbol, sp_growth):
 

@@ -87,27 +87,3 @@ with r2c2:
 		st.plotly_chart(plot_target_price(target_price_labels, target_price_vals))
 
 
-
-
-def calculate_beta(symbol_df, sp_df):
-	
-	symbol = symbol_df[['date', 'symbol', 'changePercent']].set_index('date')
-	sp = sp_df[['date', 'symbol', 'changePercent']].set_index('date')
-
-	joined = symbol.merge(sp, left_on='date', right_on='date', suffixes=('_symbol', '_sp'))
-	sevenDayBeta = (joined['changePercent_symbol'].rolling(window=7).cov(joined['changePercent_sp']) / joined['changePercent_sp'].rolling(window=7).var()).bfill()
-	symbol_df['sevenDayBeta'] = sevenDayBeta
-	st.write(f"The length of joined is: {len(joined)}")
-	st.write(f"The length of symbol_df is: {len(symbol_df)}")
-	st.write(f"The length of sevenDayBeta is: {len(sevenDayBeta)}")
-	st.write(f"The data type of sevenDayBeta is: {type(sevenDayBeta)}")
-	st.table(symbol_df[:3])
-	
-	return symbol_df
-
-grouped = df_filtered.groupby('symbol')
-sp_df = grouped.get_group('^GSPC').copy()
-
-for symbol, group in grouped:
-
-	group_beta = calculate_beta(group, sp_df).copy()

@@ -62,4 +62,4 @@ for row in range(num_rows):
 				group = groups.get_group(symbol).copy()
 				st.plotly_chart(plot_candles(group, symbol, sp_growth))
 
-
+st.table(df.head())
