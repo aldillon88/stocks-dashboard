@@ -51,7 +51,7 @@ for row in range(num_rows):
 		with st.container(border=True):
 			if row * 2 < len(symbols_list):
 				symbol = symbols_list[row * 2]
-				group = groups.get_group(symbol)
+				group = groups.get_group(symbol).copy()
 				st.plotly_chart(plot_candles(group, symbol, sp_growth))
 	
 	# Second item in row (if exists)
@@ -59,7 +59,7 @@ for row in range(num_rows):
 		with st.container(border=True):
 			if row * 2 + 1 < len(symbols_list):
 				symbol = symbols_list[row * 2 + 1]
-				group = groups.get_group(symbol)
+				group = groups.get_group(symbol).copy()
 				st.plotly_chart(plot_candles(group, symbol, sp_growth))
 
 

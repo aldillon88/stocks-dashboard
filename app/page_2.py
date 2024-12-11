@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 
 import sys
 import os
@@ -20,15 +21,15 @@ symbols = price_df['symbol'].unique().tolist()
 symbols.remove('^GSPC')
 selected_symbol = st.selectbox(label='Select a stock symbol', options=symbols)
 
+# Retrieve stock summary info from Yahoo Finance (yfinance)
+ticker = yf.Ticker(selected_symbol)
+
 # Create a layout for the top row.
 r1c1, r1c2, r1c3, r1c4, r1c5 = st.columns([.3, .15, .15, .15, .15,])
 
 # Filter the dataframe based on the selected symbol and the S&P 500 symbol for comparison.
 selected_symbols = [selected_symbol, '^GSPC']
 df_filtered = price_df.loc[price_df['symbol'].isin(selected_symbols)].copy()
-
-# Display a chart showing percentage growth over time compared to the S&P 500.
-st.plotly_chart(plot_vs_sp(df_filtered))
 
 # Load stock summary data into a dataframe.
 summary_df = get_ticker_summary(symbols)
@@ -62,54 +63,51 @@ with r1c5:
 		value = summary_df_filtered['recommendationKey'].values[0].replace('_', ' ').capitalize()
 		st.metric(label='Recommendation', value=value)
 
-target_price_cols = ['currentPrice', 'targetHighPrice', 'targetLowPrice', 'targetMeanPrice', 'targetMedianPrice']
-target_price_vals = summary_df_filtered[target_price_cols].values[0]
-target_price_labels = ['Current', 'High', 'Low', 'Mean', 'Median']
-st.plotly_chart(plot_target_price(target_price_labels, target_price_vals))
 
-st.plotly_chart(plot_vix(vix_df))
+r2c1, r2c2 = st.columns([.7, .3])
 
-st.table(summary_df_filtered)
+with r2c1:
+	with st.container(border=True):
+		# Display a chart showing percentage growth over time compared to the S&P 500.
+		st.plotly_chart(plot_vs_sp(df_filtered))
+	with st.container(border=True):
+		st.plotly_chart(plot_vix(vix_df))
 
-import yfinance as yf
-ticker = yf.Ticker('AAPL')
+with r2c2:
+	with st.container(border=True):
+		reco_df = pd.DataFrame(ticker.recommendations)
+		reco_df_pivot = reco_df.set_index('period').T.iloc[:, 0]
+		st.plotly_chart(plot_recommendations(reco_df_pivot))
+
+	with st.container(border=True):
+
+		target_price_cols = ['currentPrice', 'targetHighPrice', 'targetLowPrice', 'targetMeanPrice', 'targetMedianPrice']
+		target_price_vals = summary_df_filtered[target_price_cols].values[0]
+		target_price_labels = ['Current', 'High', 'Low', 'Mean', 'Median']
+		st.plotly_chart(plot_target_price(target_price_labels, target_price_vals))
 
 
-reco_df = pd.DataFrame(ticker.recommendations)
-reco_df_pivot = reco_df.set_index('period').T.iloc[:, 0]
 
-def plot_recommendations(df):
 
-	fig = go.Figure()
+def calculate_beta(symbol_df, sp_df):
+	
+	symbol = symbol_df[['date', 'symbol', 'changePercent']].set_index('date')
+	sp = sp_df[['date', 'symbol', 'changePercent']].set_index('date')
 
-	fig.add_trace(go.Bar(
-		x=df.values,
-		y=df.index,
-		orientation='h'
-	))
-
-	fig.update_layout(
-		yaxis=dict(
-			autorange='reversed'
-		)
-	)
-
-	return fig
-
-st.plotly_chart(plot_recommendations(reco_df_pivot))
-
-st.write(ticker.earnings_estimate)
-st.write(ticker.earnings_history)
-st.write(ticker.eps_trend)
-st.write(ticker.recommendations)
-
-st.table(df_filtered[:3])
+	joined = symbol.merge(sp, left_on='date', right_on='date', suffixes=('_symbol', '_sp'))
+	sevenDayBeta = (joined['changePercent_symbol'].rolling(window=7).cov(joined['changePercent_sp']) / joined['changePercent_sp'].rolling(window=7).var()).bfill()
+	symbol_df['sevenDayBeta'] = sevenDayBeta
+	st.write(f"The length of joined is: {len(joined)}")
+	st.write(f"The length of symbol_df is: {len(symbol_df)}")
+	st.write(f"The length of sevenDayBeta is: {len(sevenDayBeta)}")
+	st.write(f"The data type of sevenDayBeta is: {type(sevenDayBeta)}")
+	st.table(symbol_df[:3])
+	
+	return symbol_df
 
 grouped = df_filtered.groupby('symbol')
-a = grouped.get_group('AAPL')[['date', 'symbol', 'changePercent']].set_index('date')
-b = grouped.get_group('^GSPC')[['date', 'changePercent']].set_index('date')
-joined = a.merge(b, left_on='date', right_on='date', suffixes=('_symbol', '_sp'))
-st.write(joined)
+sp_df = grouped.get_group('^GSPC').copy()
 
-joined['beta'] = joined['changePercent_symbol'].rolling(window=7).cov(joined['changePercent_sp']) / joined['changePercent_sp'].rolling(window=7).var()
-st.write(joined)
+for symbol, group in grouped:
+
+	group_beta = calculate_beta(group, sp_df).copy()

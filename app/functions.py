@@ -32,7 +32,7 @@ def load_data(unit=None):
 	results = query_job.result()
 	df = pd.DataFrame([dict(row) for row in results])
 	start_date = df['date'].min()
-	end_date = df['date'].max()
+	end_date = df['date'].max() + datetime.timedelta(days=1)
 	print(f"start_date: {start_date}\nend_date: {end_date}")
 	sp = get_sp500_historical_prices(start_date, end_date)
 	df = pd.concat([df, sp])
@@ -419,4 +419,22 @@ def plot_vix(vix_df):
 		fill='tozeroy',
 		mode='lines'
 	))
+	return fig
+
+def plot_recommendations(df):
+
+	fig = go.Figure()
+
+	fig.add_trace(go.Bar(
+		x=df.values,
+		y=df.index,
+		orientation='h'
+	))
+
+	fig.update_layout(
+		yaxis=dict(
+			autorange='reversed'
+		)
+	)
+
 	return fig
