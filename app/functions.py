@@ -100,7 +100,8 @@ def get_ticker_summary(symbols):
 		ticker = yf.Ticker(symbol)
 		summary_list.append(ticker.info)
 	df = pd.DataFrame(summary_list)[cols_to_keep]
-	df['impliedReturn'] = round((df['targetMeanPrice'] - df['currentPrice']) / df['currentPrice'], 2)
+	#df['impliedReturn'] = round((df['targetMeanPrice'] - df['currentPrice']) / df['currentPrice'], 2)
+	df['impliedReturn'] = (df['targetMeanPrice'] - df['currentPrice']) / df['currentPrice']
 	
 	return df
 
@@ -164,6 +165,7 @@ def calculate_beta(df):
 		joined = symbol_data.join(sp_data, rsuffix='_sp')
 		sevenDayBeta = (joined['changePercent'].rolling(window=7).cov(joined['changePercent_sp']) / joined['changePercent_sp'].rolling(window=7).var()).bfill()
 		group['sevenDayBeta'] = sevenDayBeta.values
+		#group['sevenDayBetaCentered'] = group['sevenDayBeta'] - group['sevenDayBeta'].mean()
 		results.append(group)
 	
 	return pd.concat(results)

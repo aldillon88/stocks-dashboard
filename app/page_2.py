@@ -53,9 +53,8 @@ with r1c3:
 with r1c4:
 	with st.container(border=True):
 		value_num = summary_df_filtered['impliedReturn'].values[0]
-		value_formatted = format(value_num, '.2%')
-		#value = format(summary_df_filtered['impliedReturn'].values[0], '.2%')
 		if abs(value_num) > 0:
+			value_formatted = format(value_num, '.2%')
 			st.metric(label='Implied Return', value=value_formatted)
 
 with r1c5:
@@ -86,4 +85,79 @@ with r2c2:
 		target_price_labels = ['Current', 'High', 'Low', 'Mean', 'Median']
 		st.plotly_chart(plot_target_price(target_price_labels, target_price_vals))
 
+def plot_beta(df):
+	
+	df = df.copy()
+	df['sevenDayBetaCentered'] = df['sevenDayBeta'] - df['sevenDayBeta'].mean()
 
+	df_above = df.copy()
+	df_above['sevenDayBetaCentered'] = df_above['sevenDayBetaCentered'].clip(lower=0)
+
+	df_below = df.copy()
+	df_below['sevenDayBetaCentered'] = df_below['sevenDayBetaCentered'].clip(upper=0)
+
+	fig = go.Figure()
+
+	fig.add_trace(
+		go.Scatter(
+			x=df_above['date'],
+			y=df_above['sevenDayBetaCentered'],
+			fill='tozeroy',
+			fillcolor='red',
+			mode='none'
+		)
+	)
+
+	fig.add_trace(
+		go.Scatter(
+			x=df_below['date'],
+			y=df_below['sevenDayBetaCentered'],
+			fill='tozeroy',
+			fillcolor='green',
+			mode='none'
+		)
+	)
+
+	return fig
+
+def plot_centered_scatter(df, column):
+	
+	df = df.copy()
+	df[f"{column}Centered"] = df[column] - df[column].mean()
+
+	df_above = df.copy()
+	df_above[f"{column}Centered"] = df_above[f"{column}Centered"].clip(lower=0)
+
+	df_below = df.copy()
+	df_below[f"{column}Centered"] = df_below[f"{column}Centered"].clip(upper=0)
+
+	fig = go.Figure()
+
+	fig.add_trace(
+		go.Scatter(
+			x=df_above['date'],
+			y=df_above[f"{column}Centered"],
+			fill='tozeroy',
+			#fillcolor='red',
+			mode='lines',
+			name=f"{column} above average"
+		)
+	)
+
+	fig.add_trace(
+		go.Scatter(
+			x=df_below['date'],
+			y=df_below[f"{column}Centered"],
+			fill='tozeroy',
+			#fillcolor='green',
+			mode='lines',
+			name=f"{column} below average"
+		)
+	)
+
+	return fig
+
+beta_df = df_filtered.loc[df_filtered['symbol'] == selected_symbol]
+st.plotly_chart(plot_beta(beta_df))
+st.plotly_chart(plot_centered_scatter(beta_df, 'volume'))
+st.table(df_filtered)
