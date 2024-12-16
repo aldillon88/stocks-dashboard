@@ -450,8 +450,51 @@ def plot_recommendations(df):
 	))
 
 	fig.update_layout(
+		margin=dict(
+			t=0,
+			b=0,
+			l=0,
+			r=0
+		),
 		yaxis=dict(
 			autorange='reversed'
+		)
+	)
+
+	return fig
+
+def plot_centered_scatter(df, column):
+	
+	df = df.copy()
+	df[f"{column}Centered"] = df[column] - df[column].mean()
+
+	df_above = df.copy()
+	df_above[f"{column}Centered"] = df_above[f"{column}Centered"].clip(lower=0)
+
+	df_below = df.copy()
+	df_below[f"{column}Centered"] = df_below[f"{column}Centered"].clip(upper=0)
+
+	fig = go.Figure()
+
+	fig.add_trace(
+		go.Scatter(
+			x=df_above['date'],
+			y=df_above[f"{column}Centered"],
+			fill='tozeroy',
+			#fillcolor='red',
+			mode='none',
+			name=f"{column} above avg."
+		)
+	)
+
+	fig.add_trace(
+		go.Scatter(
+			x=df_below['date'],
+			y=df_below[f"{column}Centered"],
+			fill='tozeroy',
+			#fillcolor='green',
+			mode='none',
+			name=f"{column} below avg."
 		)
 	)
 
